@@ -2,17 +2,19 @@ package main
 
 import (
 	"flag"
-	"net/http/httputil"
-	"net/http"
 	"fmt"
-	"k8s.io/client-go/rest"
-	"k8s.io/client-go/kubernetes"
-	"k8s.io/client-go/tools/clientcmd"
-	meta_v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/watch"
-	"k8s.io/api/core/v1"
+	"net/http"
+	"net/http/httputil"
+
 	"github.com/golang/glog"
-	)
+	"k8s.io/api/core/v1"
+	meta_v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/fields"
+	"k8s.io/apimachinery/pkg/watch"
+	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/rest"
+	"k8s.io/client-go/tools/clientcmd"
+)
 
 type Endpoint struct {
 	Address string
@@ -59,7 +61,7 @@ func main() {
 	client = kubernetes.NewForConfigOrDie(config)
 
 	w, err := client.CoreV1().Endpoints(opts.Namespace).Watch(meta_v1.ListOptions{
-		FieldSelector: fmt.Sprintf("metadata.name=%s", opts.ServiceName),
+		FieldSelector: fields.OneTermEqualSelector("metadata.name", opts.ServiceName).String(),
 	})
 
 	if err != nil {
@@ -73,6 +75,8 @@ func main() {
 		Director: func(r *http.Request) {
 			r.URL.Scheme = "http"
 			r.URL.Host = ep.FullAddress()
+
+			glog.Infof("forwarding to %s", r.URL.String())
 		},
 	}
 
@@ -106,6 +110,7 @@ func WatchPrimaryEndpoint(w watch.Interface, ep *Endpoint) {
 				for _, port := range endpoint.Subsets[0].Ports {
 					if port.Name == "http" {
 						foundPort = port.Port
+						continue
 					}
 				}
 
