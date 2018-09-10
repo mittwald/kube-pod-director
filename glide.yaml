@@ -1,0 +1,4 @@
+package: github.com/mittwald/kube-pod-director
+import:
+- package: k8s.io/client-go
+  version: ^8.0.0

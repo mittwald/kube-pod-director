@@ -1,0 +1,33 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: test
+  namespace: default
+spec:
+  selector:
+    matchLabels:
+      app: example
+  replicas: 4
+  template:
+    metadata:
+      labels:
+        app: example
+    spec:
+      containers:
+        - image: nginx
+          name: web
+          ports:
+            - containerPort: 80
+              name: http
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: test
+  namespace: default
+spec:
+  selector:
+    app: example
+  ports:
+    - targetPort: 80
+      port: 80
