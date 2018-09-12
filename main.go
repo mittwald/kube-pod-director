@@ -60,23 +60,15 @@ func main() {
 
 	client = kubernetes.NewForConfigOrDie(config)
 
-	w, err := client.CoreV1().Endpoints(opts.Namespace).Watch(meta_v1.ListOptions{
-		FieldSelector: fields.OneTermEqualSelector("metadata.name", opts.ServiceName).String(),
-	})
-
-	if err != nil {
-		panic(err)
-	}
-
 	ep := Endpoint{}
-	WatchPrimaryEndpoint(w, &ep)
+	go WatchPrimaryEndpoint(client, &ep)
 
 	proxy := httputil.ReverseProxy{
 		Director: func(r *http.Request) {
 			r.URL.Scheme = "http"
 			r.URL.Host = ep.FullAddress()
 
-			glog.Infof("forwarding to %s", r.URL.String())
+			glog.V(6).Infof("forwarding to %s", r.URL.String())
 		},
 	}
 
@@ -89,27 +81,35 @@ func main() {
 	}
 }
 
-func WatchPrimaryEndpoint(w watch.Interface, ep *Endpoint) {
-	c := w.ResultChan()
-	for ev := range c {
-		if ev.Type == watch.Error {
-			glog.Warningf("error while watching: %+v", ev.Object)
-			continue
+func WatchPrimaryEndpoint(client kubernetes.Interface, ep *Endpoint) {
+	for {
+		w, err := client.CoreV1().Endpoints(opts.Namespace).Watch(meta_v1.ListOptions{
+			FieldSelector: fields.OneTermEqualSelector("metadata.name", opts.ServiceName).String(),
+		})
+
+		if err != nil {
+			panic(err)
 		}
 
-		if ev.Type != watch.Added && ev.Type != watch.Modified {
-			continue
-		}
+		c := w.ResultChan()
+		for ev := range c {
+			if ev.Type == watch.Error {
+				glog.Warningf("error while watching: %+v", ev.Object)
+				continue
+			}
 
-		endpoint := ev.Object.(*v1.Endpoints)
+			if ev.Type != watch.Added && ev.Type != watch.Modified {
+				continue
+			}
 
-		if len(endpoint.Subsets) == 0 || len(endpoint.Subsets[0].Addresses) == 0 {
-			glog.Warningf("service '%s' has no endpoints", opts.ServiceName)
-			continue
-		}
+			endpoint := ev.Object.(*v1.Endpoints)
 
-		if ep.Address == "" {
-			if len(endpoint.Subsets) > 0 && len(endpoint.Subsets[0].Addresses) > 0 {
+			if len(endpoint.Subsets) == 0 || len(endpoint.Subsets[0].Addresses) == 0 {
+				glog.Warningf("service '%s' has no endpoints", opts.ServiceName)
+				continue
+			}
+
+			if ep.Address == "" {
 				foundPort := int32(80)
 
 				for _, port := range endpoint.Subsets[0].Ports {
@@ -123,8 +123,9 @@ func WatchPrimaryEndpoint(w watch.Interface, ep *Endpoint) {
 				ep.Port = foundPort
 
 				glog.Infof("initializing endpoint with '%s'", ep.FullAddress())
+				continue
 			}
-		} else {
+
 			endpointRemains := false
 			for _, addr := range endpoint.Subsets[0].Addresses {
 				if addr.IP == ep.Address {
@@ -150,5 +151,7 @@ func WatchPrimaryEndpoint(w watch.Interface, ep *Endpoint) {
 				glog.Infof("endpoint '%s' is not available any more. Switching to '%s'", previous.FullAddress(), ep.FullAddress())
 			}
 		}
+
+		glog.V(5).Info("watch has ended. starting new watch")
 	}
 }
