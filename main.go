@@ -92,6 +92,11 @@ func main() {
 func WatchPrimaryEndpoint(w watch.Interface, ep *Endpoint) {
 	c := w.ResultChan()
 	for ev := range c {
+		if ev.Type == watch.Error {
+			glog.Warningf("error while watching: %+v", ev.Object)
+			continue
+		}
+
 		if ev.Type != watch.Added && ev.Type != watch.Modified {
 			continue
 		}
