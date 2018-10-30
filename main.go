@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httputil"
+	"time"
 
 	"github.com/golang/glog"
 	"k8s.io/api/core/v1"
@@ -88,7 +89,10 @@ func WatchPrimaryEndpoint(client kubernetes.Interface, ep *Endpoint) {
 		})
 
 		if err != nil {
-			panic(err)
+			glog.Errorf("error while establishing watch: %s", err.Error())
+			time.Sleep(30 * time.Second)
+
+			continue
 		}
 
 		c := w.ResultChan()
